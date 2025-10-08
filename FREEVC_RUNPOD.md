@@ -3,9 +3,9 @@
 FreeVC's tts is quite slow (13s/audio) on Mac and we need to generate 65k audios.
 Let's generate them on a cheap GPU pod from Runpod.
 
-## Test with 10 files
+## Test with N files
 
-###  Prepare the 10 files (vctk_refs_16k.zip, ljs_10_16k.zip)
+###  Prepare the files (vctk_refs_16k.zip, ljs_16k.zip)
 
 Prerequirements
 - 16 KHz mono wavs (see DATASETS.md)
@@ -13,21 +13,24 @@ Prerequirements
   - `data/VCTK_refs_16K/*.wav` (16 kHz mono, one ref per speaker)
 - a Runpod with RTX 4090 (see RUNPOD.md)
 
-Create a small 10-file test set (no randomness, just first 10):
+Create a small N-file test set (no randomness, just first N):
 ```bash
+rm -rf ship tmp
 mkdir -p ship tmp
+N=1000
 
-# First 10 LJS IDs (from metadata.csv)
-head -n 10 data/LJSpeech/metadata.csv | cut -d'|' -f1 > tmp/ljs10.txt
+# First N LJS IDs (from metadata.csv)
+# [ALT] if you want ALL, just do tar zcvf ljs_16k.tar.gz data/LJSpeech_16K/wavs
+# Use --no-same-owner when untarring on the server and, next time, create the tar on macOS with --no-xattrs and excludes for ._* and .DS_Store to keep the archive clean.
 
-# Zip those 10 LJS 16k WAVs
-rm -f ship/ljs_10_16k.zip
-while read -r ID; do
-    zip -j -q ship/ljs_10_16k.zip "data/LJSpeech_16K/wavs/${ID}.wav"
-done < tmp/ljs10.txt
+tar zcvf ljs_16k.tar.gz data/LJSpeech_16K/wavs
+
+head -n "$N" data/LJSpeech/metadata.csv | cut -d'|' -f1 > "tmp/ljs.txt"
+while IFS= read -r ID; do
+  zip -j -q ship/ljs_16k.zip "data/LJSpeech_16K/wavs/${ID}.wav"
+done < "tmp/ljs.txt"
 
 # Zip all VCTK 16k refs (one per speaker)
-rm -f ship/vctk_refs_16k.zip
 zip -r -q ship/vctk_refs_16k.zip data/VCTK_refs_16K
 ```
 
@@ -42,12 +45,14 @@ runpodctl start pod $POD_ID
 ```
 
 Create the pod folder and upload the two zips and script via SCP:
-[Alt] upload via Jupyter interface (quite useful)
+[Alt] upload via Jupyter interface (quite useful but slow for big files)
 ```bash
 export POD_DIR="/workspace"    # working dir on the pod
-scp -pC ship/ljs_10_16k.zip         runpod-1:"$POD_DIR"/
+scp -pC "ship/ljs_16k.zip"         runpod-1:"$POD_DIR"/ # or ljs_16k.tar.gz
 scp -pC ship/vctk_refs_16k.zip      runpod-1:"$POD_DIR"/
-scp -pC freevc_runpod.sh            runpod-1:"$POD_DIR"/
+scp -pC freevc_batch.py            runpod-1:"$POD_DIR"/
+
+Example: scp -rp -P 19298 -i ~/.ssh/runpod_ed25519 ljs_16k.tar.gz root@213.173.98.21:/workspace/pepito.tar.gz
 ```
 
 Environment setup on pod
@@ -55,11 +60,10 @@ Environment setup on pod
 ssh runpod-1
 pod# cd /workspace
 pod# mkdir -p LJS_accented out_tmp
-pod# unzip -q ljs_10_16k.zip -d LJSpeech_10
+pod# unzip -q "ljs_16k.zip" -d "LJSpeech" # or tar xvf ljs_16k.tar.gz -C LJSpeech
 pod# unzip -q vctk_refs_16k.zip
 [Note] use jupyter
 
-pod# set -e
 pod# apt-get update -y && apt-get install -y ffmpeg unzip libsndfile1 zip time
 
 # Fresh python sandbox/env. 
@@ -74,7 +78,7 @@ pod# python -c "import torch, torchaudio; print('torch', torch.__version__, 'tor
 
 # Install coqui-tts (maintained fork; keeps the tts CLI).
 pod# python -m pip install --upgrade pip
-pod# pip install --no-cache-dir "coqui-tts==0.27.*"
+pod# pip install coqui-tts
 ```
 
 Check Torch sees the GPU
@@ -102,30 +106,45 @@ CLI warm-up with a single file (ensures the speaker encoder also runs on GPU)
 ```bash
 pod# tts --use_cuda \
 --model_name "voice_conversion_models/multilingual/vctk/freevc24" \
---source_wav LJSpeech_10/LJ001-0001.wav \
+--source_wav LJSpeech/LJ001-0001.wav \
 --target_wav data/VCTK_refs_16K/p225.wav \
 --out_path /tmp/warmup.wav
 ```
 
 ### Execute the batch for the 10 files
 
+Use `screen` so that you can detach and leave the batch running
+- Create session: screen -S freevc
+- Detach: Ctrl + A, then D
+- Reattach:	screen -r freevc
+
 Execute the script and time it.
 ```bash
-pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' bash freevc_runpod.sh
-  -> elapsed=3:16.45 cpu=198% maxrss=3834880KB
+pod# screen -S freevc
+pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' python freevc_batch.py --num 1000 --workers 1 --use_cuda
+pod# exit
+```
+
+[Opt] Example for the whole batch
+```bash
+pod# screen -S freevc
+pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' python freevc_batch.py --num-random-speakers 5 --workers 1 --use_cuda
+pod# exit
 ```
 
 Download results and terminate the pod.
-[Alt] Use Jupyter to download and the UI to stop/terminate the pod.
+[Note] for the whole 65k batch the size of out is around 20GB!
 ```bash
-scp -pC runpod-1:"$POD_DIR"/LJS_accented_10.zip .
+tar zcvf out.tar.gz out_tmp/
+scp -pC runpod-1:"$POD_DIR"/out.tar.gz .
 runpodctl stop pod $POD_ID
 runpodctl remove pod $POD_ID
 ```
 
 Compare the original LJSpeech wavs and the new accented ones.
 ```bash
+tar xvf out.tar.gz
 afplay data/LJSpeech_16K/wavs/LJ001-0001.wav # the original LJSpeech LJ001-0001 audio
 afplay data/VCTK_refs_16K/p225.wav # VCTK speaker p225 voice
-afplay LJS_accented/LJ001-0001_p225.wav # LJ001-0001 but by speaker p225 from VCTK
+afplay out/LJ001-0001_p225.wav # LJ001-0001 but by speaker p225 from VCTK
 ```
