@@ -3,3 +3,6 @@ work/
 .DS_Store
 *.wav
 *.zip
+*.tar
+*.tar.gz
+*.txt
