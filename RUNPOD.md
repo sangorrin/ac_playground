@@ -16,6 +16,10 @@ cat ~/.ssh/runpod_ed25519.pub
 - clikc Pods > Deploy a Pod
   - Choose: GPU, Secure Cloud, Any Region
     [Note] Do not choose Community Cloud (network problems)
+  - Better attach a Network Volume storage with 100GB or 200GB to be safe.
+    - we can upload or download big files while the pod is stopped or terminated.
+    - we can attach it to a CPU-only pod for certain tasks such as ffmpeg conversions.
+    - By default you get 30GB for the fs, and a Volume disk of 50GB for /workspace
   - Additional Filters: 
     - select same CUDA version as template (e.g. 12.8)
   - Select RTX 4090
