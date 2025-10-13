@@ -4,7 +4,7 @@
 #   --dict english_us_mfa \
 #   --acoustic english_mfa \
 #   --out-align mfa/alignments_ljs_accented \
-#   --out-frames phones_20ms \            # <-- now writes int16 phone IDs here
+#   --out-frames phones_20ms \
 #   --jobs 32
 import argparse, subprocess, json, os
 from pathlib import Path
