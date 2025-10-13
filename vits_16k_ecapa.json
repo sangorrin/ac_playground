@@ -1,0 +1,40 @@
+{
+  "model": "vits",
+  "run_name": "native_vits_16k",
+  "output_path": "runs/native_vits_16k",
+  "audio": {
+    "sample_rate": 16000,
+    "fft_size": 1024,
+    "win_length": 1024,
+    "hop_length": 320,
+    "num_mels": 80,
+    "mel_fmin": 0,
+    "mel_fmax": 8000
+  },
+  "datasets": [
+    {
+      "formatter": "jsonl_native",
+      "dataset": "custom",
+      "path": ".",
+      "meta_file_train": "data/manifest_coqui.jsonl"
+    }
+  ],
+  "use_d_vector_file": true,
+  "use_speaker_embedding": false,
+  "use_phonemes": false,
+  "batch_size": 32,
+  "eval_batch_size": 32,
+  "mixed_precision": true,
+  "num_loader_workers": 16,
+  "num_eval_loader_workers": 8,
+  "optimizer": "AdamW",
+  "optimizer_params": {
+    "lr": 0.0002,
+    "weight_decay": 1e-6
+  },
+  "lr_scheduler": null,
+  "epochs": 300,
+  "save_step": 2000,
+  "print_step": 50,
+  "seed": 1234
+}
