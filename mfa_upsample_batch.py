@@ -3,8 +3,9 @@
 #   --corpus-dir mfa/corpus_ljs_accented \
 #   --dict english_us_mfa \
 #   --acoustic english_mfa \
-#   --out-align mfa/alignments_ljs_accented \
-#   --out-frames phones_20ms \
+#   --out-align mfa/alignments_16ms \
+#   --out-frames phones_16ms \
+#   --hop-ms 16 \
 #   --jobs 32
 import argparse, subprocess, json, os
 from pathlib import Path
@@ -12,8 +13,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from textgrid import TextGrid
 
+
 def list_textgrids(root: Path):
     return sorted(root.rglob("*.TextGrid"))
+
 
 def extract_phone_symbols(tg_path: Path):
     try:
@@ -29,6 +32,7 @@ def extract_phone_symbols(tg_path: Path):
     except Exception:
         return set()
 
+
 def build_phoneme_map(textgrids, existing: Path|None):
     # Reuse if provided
     if existing and existing.exists():
@@ -38,6 +42,7 @@ def build_phoneme_map(textgrids, existing: Path|None):
             raise RuntimeError("phoneme_map.json must map 'sil' to 0.")
         return pm
 
+
     uniq = set()
     with ProcessPoolExecutor(max_workers=os.cpu_count() or 8) as ex:
         for s in ex.map(extract_phone_symbols, textgrids):
@@ -46,7 +51,8 @@ def build_phoneme_map(textgrids, existing: Path|None):
     ordered = ["sil"] + sorted(x for x in uniq if x)
     return {p:i for i,p in enumerate(ordered)}
 
-def upsample_textgrid_to_ids(tg_path: Path, out_dir: Path, pmap: dict[str,int], sr=16000, hop=320):
+
+def upsample_textgrid_to_ids(tg_path: Path, out_dir: Path, pmap: dict[str,int], sr=16000, hop=256):
     tg = TextGrid.fromFile(tg_path)
     tier = next((t for t in tg.tiers if t.name and t.name.lower().startswith("phone")), None)
     if tier is None:
@@ -65,16 +71,18 @@ def upsample_textgrid_to_ids(tg_path: Path, out_dir: Path, pmap: dict[str,int], 
         out[s:e] = pmap.get(lab, 0)
     np.save(out_dir / (tg_path.stem + ".npy"), out)
 
+
 def _one_textgrid(args):
-    tg_path, out_dir, pmap = args
+    tg_path, out_dir, pmap, sr, hop = args
     try:
         out = out_dir / (tg_path.stem + ".npy")
         if out.exists():
             return ("SKIP", tg_path.stem)
-        upsample_textgrid_to_ids(tg_path, out_dir, pmap)
+        upsample_textgrid_to_ids(tg_path, out_dir, pmap, sr, hop)
         return ("OK", tg_path.stem)
     except Exception as e:
         return ("ERR", f"{tg_path.name}: {e}")
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -82,25 +90,37 @@ def main():
     ap.add_argument("--dict", default="english_us_mfa", help="MFA dict name or path")
     ap.add_argument("--acoustic", default="english_mfa", help="MFA acoustic model name or path")
     ap.add_argument("--out-align", required=True)
-    ap.add_argument("--out-frames", required=True, help="Output dir for 20ms phone IDs (int16)")
+    ap.add_argument("--out-frames", required=True, help="Output dir for phone IDs (int16)")
+    ap.add_argument("--hop-ms", type=float, default=16.0, help="Frame hop in milliseconds (default: 16ms)")
+    ap.add_argument("--sample-rate", type=int, default=16000, help="Audio sample rate (default: 16000)")
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--skip-align-if-exists", action="store_true")
     ap.add_argument("--phoneme-map", default=None, help="Optional path to an existing phoneme_map.json to reuse")
     args = ap.parse_args()
 
+
     align_dir = Path(args.out_align); align_dir.mkdir(parents=True, exist_ok=True)
     frames_dir = Path(args.out_frames); frames_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) MFA alignment (only if TextGrids don't exist or not skipping)
+
+    # Calculate hop length in samples
+    hop_samples = int(args.sample_rate * args.hop_ms / 1000)
+    print(f"[CONFIG] Sample rate: {args.sample_rate} Hz, Hop: {args.hop_ms}ms ({hop_samples} samples)")
+
+
+    # 1) MFA alignment with frame_shift
     if not args.skip_align_if_exists or not any(align_dir.rglob("*.TextGrid")):
         cmd = [
             "mfa","align", args.corpus_dir, args.dict, args.acoustic, str(align_dir),
-            "-j", str(args.jobs), "--clean", "--overwrite"
+            "-j", str(args.jobs),
+            "--frame_shift", str(int(args.hop_ms)),  # MFA frame_shift in milliseconds (integer)
+            "--clean", "--overwrite"
         ]
         print("[MFA]", " ".join(cmd))
         subprocess.run(cmd, check=True)
     else:
         print("[MFA] Skipped (TextGrids exist)")
+
 
     # 2) Build or load phoneme_map.json (sil → 0)
     tgs = list_textgrids(align_dir)
@@ -113,16 +133,19 @@ def main():
             json.dump(pmap, f, ensure_ascii=False, indent=2)
     print(f"[MAP] {map_path} (size={len(pmap)}; sil→0)")
 
-    # 3) Upsample to 20ms phone IDs in parallel
-    ok = err = 0
-    work = [(p, frames_dir, pmap) for p in tgs]
+
+    # 3) Upsample to phone IDs in parallel
+    ok = err = skip = 0
+    work = [(p, frames_dir, pmap, args.sample_rate, hop_samples) for p in tgs]
     with ProcessPoolExecutor(max_workers=args.jobs) as ex:
         futs = [ex.submit(_one_textgrid, w) for w in work]
         for fut in as_completed(futs):
             s, _ = fut.result()
             if s == "OK": ok += 1
+            elif s == "SKIP": skip += 1
             elif s == "ERR": err += 1
-    print(f"[DONE] phones@20ms ids={ok} err={err} out={frames_dir}")
+    print(f"[DONE] phones@{args.hop_ms}ms: ok={ok} skip={skip} err={err} out={frames_dir}")
+
 
 if __name__ == "__main__":
     main()

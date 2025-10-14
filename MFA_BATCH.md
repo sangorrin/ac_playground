@@ -57,13 +57,15 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 ulimit -n 4096
 
+# Use NEW directories to keep both versions
 python mfa_upsample_batch.py \
   --corpus-dir mfa/corpus_ljs_accented \
   --dict english_us_mfa \
   --acoustic english_mfa \
-  --out-align mfa/alignments_ljs_accented \
-  --out-frames phones_20ms \
+  --out-align mfa/alignments_16ms \
+  --out-frames phones_16ms \
+  --hop-ms 16 \
   --jobs 32
 
-[Opt] rm -rf mfa/alignments_ljs_accented # temporary folder
+[Opt] rm -rf mfa/alignments_16ms # temporary folder
 ```
