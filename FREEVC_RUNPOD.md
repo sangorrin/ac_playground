@@ -1,4 +1,4 @@
-# Run FreeVC on a Runpod GPU pod 
+# Run FreeVC on a Runpod GPU pod
 
 FreeVC's tts is quite slow (13s/audio) on Mac and we need to generate 65k audios.
 Let's generate them on a cheap GPU pod from Runpod.
@@ -66,7 +66,7 @@ pod# unzip -q vctk_refs_16k.zip
 
 pod# apt-get update -y && apt-get install -y ffmpeg unzip libsndfile1 zip time
 
-# Fresh python sandbox/env. 
+# Fresh python sandbox/env.
 pod# python3 -m venv --system-site-packages ~/envs/freevc
 pod# source ~/envs/freevc/bin/activate
 pod# python -V
