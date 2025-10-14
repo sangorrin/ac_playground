@@ -311,7 +311,7 @@ def main():
 
     # VITS config - FULLY VALIDATED against v0.27.2
     config = VitsConfig(
-        batch_size=hw_config["batch_size"],
+        batch_size=2*hw_config["batch_size"],
         eval_batch_size=hw_config["eval_batch_size"],
         num_loader_workers=hw_config["num_workers"],
         num_eval_loader_workers=hw_config["eval_workers"],
