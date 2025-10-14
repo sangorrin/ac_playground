@@ -11,11 +11,12 @@ import torch, torchaudio
 from torch.utils.data import DataLoader, Dataset
 from speechbrain.pretrained import EncoderClassifier
 
+
 class WavSet(Dataset):
     def __init__(self, wav_dir, target_sr=16000):
         self.paths = sorted([p for p in Path(wav_dir).rglob("*.wav")])
         self.sr = target_sr
-    def __len__(self): 
+    def __len__(self):
         return len(self.paths)
     def __getitem__(self, i):
         p = self.paths[i]
@@ -40,22 +41,18 @@ class WavSet(Dataset):
 
         return p, wav.squeeze(0)  # [T]
 
+
 def collate(batch):
-    # batch: list of (Path, waveform[T]) from Dataset.__getitem__
-    # The DataLoader wants to stack a list of items from __getitem__ into a single batch tensor.
-    # Audio clips have variable length ([T_i]). Tensors must have the same length to stack.
-    # Solution: pad each waveform to the max length in the batch and also return the original lengths so the model can ignore padding.
     paths, waves = zip(*batch)
     lens = torch.tensor([w.shape[0] for w in waves], dtype=torch.int64)
     T = int(lens.max().item())
     pad = torch.zeros(len(waves), T, dtype=torch.float32)
 
-    # copy each waveform into the left-aligned slice    
     for i, w in enumerate(waves):
-        pad[i, : w.shape[0]] = w # right side remains zeros (padding)
+        pad[i, : w.shape[0]] = w
 
-    # return: file paths (for saving), padded waveforms, and true lengths
     return paths, pad, lens
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -76,18 +73,24 @@ def main():
         run_opts={"device": args.device}
     )
 
+    count = 0
     with torch.inference_mode():
         for paths, wavs, lens in dl:
             wavs = wavs.to(args.device)
-            emb = ecapa.encode_batch(wavs)  # [B, 192]
+            emb = ecapa.encode_batch(wavs)  # [B, 1, 192]
+            emb = emb.squeeze(1)  # [B, 192] - FIX: remove singleton dim
             emb = torch.nn.functional.normalize(emb, dim=-1)
+
             for i, p in enumerate(paths):
                 npy = out / (Path(p).stem + ".npy")
-                if npy.exists() and not args.overwrite: 
+                if npy.exists() and not args.overwrite:
                     continue
+                # Now saves (192,) instead of (1, 192)
                 np.save(npy, emb[i].detach().cpu().numpy().astype(np.float32))
+                count += 1
 
-    print("[DONE] embeddings at", out)
+    print(f"[DONE] Generated {count} embeddings at {out}")
+
 
 if __name__ == "__main__":
     main()
