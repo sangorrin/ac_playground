@@ -76,42 +76,31 @@ python train_native_tts.py --restore_path runs/native_vits_16k/checkpoint_25000.
 
 Real-time logs
 ```bash
-tail -f runs/native_vits_16k/train.log
-```
-
-Tensorboard
-```bash
-tensorboard --logdir runs/native_vits_16k
-# Open http://localhost:6006
-# train/total_loss: Should decrease steadily
-# train/mel_loss: Target ~0.3-0.35 for good quality
-# eval/mel_loss: Should track train loss (no overfitting)
+pod# tree runs
+runs
+└── native_vits_16k
+    └── run-October-14-2025_10+50AM-0000000
+        ├── best_model.pth
+        ├── best_model_39150.pth
+        ├── checkpoint_30000.pth
+        ├── checkpoint_35000.pth
+        ├── checkpoint_40000.pth
+        ├── config.json
+        ├── events.out.tfevents.1760439058.62824c693be0.4140.0
+        ├── train_native_tts.py
+        └── trainer_0_log.txt
+pod# more runs/native_vits_16k/*/trainer_0_log.txt
+    -> search for EVALUATION
 ```
 
 Quick quality check
 ```bash
-# test_synthesis.py - Quick inference test
-import torch
-from TTS.api import TTS
+python test_native_tts_inference.py \
+    --model runs/native_vits_NUCLEAR/run-October-14-2025_09+38PM-0000000/best_model_40500.pth \
+    --config runs/native_vits_NUCLEAR/run-October-14-2025_09+38PM-0000000/config.json \
+    --ljspeech_sentence "LJ001-0035" \
+    --speaker "p323" \
+    --metadata metadata.csv
 
-# Load your checkpoint
-checkpoint_path = "runs/native_vits_16k/checkpoint_15000.pth"
-
-# Initialize with your config
-model = Vits.init_from_config(config_path="runs/native_vits_16k/config.json")
-model.load_checkpoint(checkpoint_path)
-
-# Test with a sample from eval set
-test_phonemes = np.load("phones_16ms/LJ001-0001_p225.npy")
-test_dvec = np.load("VCTK_refs_16K_embeds/p225.npy")
-
-# Synthesize
-wav = model.inference(
-    phoneme_ids=test_phonemes,
-    d_vector=test_dvec,
-)
-
-# Listen
-import soundfile as sf
-sf.write("test_output.wav", wav, 16000)
+# Output will be: native_tts_LJ001-0035_p323.wav
 ```
