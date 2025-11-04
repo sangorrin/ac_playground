@@ -72,7 +72,7 @@ class NativeTTSInference:
             print(f"⚠️  Warning: Metadata required for text-based inference!")
 
         # Load phoneme vocabulary exactly like training script
-        phoneme_map_path = Path("phones_16ms/phoneme_map.json")
+        phoneme_map_path = Path("phones_20ms/phoneme_map.json")
         if not phoneme_map_path.exists():
             print(f"❌ Phoneme map not found: {phoneme_map_path}")
             sys.exit(1)

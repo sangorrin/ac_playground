@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Build a Coqui-TTS JSONL manifest with pre-computed features:
-- Pre-aligned phoneme IDs (phones_16ms/*.npy)
+- Pre-aligned phoneme IDs (phones_20ms/*.npy)
 - Speaker d-vectors (VCTK_refs_16K_embeds/*.npy)
 - Audio files (LJS_accented_16K/*.wav)
 - Text (LJSpeech/metadata.csv)
@@ -11,7 +11,7 @@ Output format per line:
   "audio_file": "LJS_accented_16K/LJ001-0001_p334.wav",
   "text": "Printing, in the only sense...",
   "speaker_name": "p334",
-  "phoneme_file": "phones_16ms/LJ001-0001_p334.npy",
+  "phoneme_file": "phones_20ms/LJ001-0001_p334.npy",
   "d_vector_file": "VCTK_refs_16K_embeds/p334.npy"
 }
 
@@ -19,7 +19,7 @@ Usage:
   python make_manifest_native.py \
     --ljs-root LJSpeech \
     --audio-dir LJS_accented_16K \
-    --phones-dir phones_16ms \
+    --phones-dir phones_20ms \
     --dvec-dir VCTK_refs_16K_embeds \
     --output data/manifest_native.jsonl \
     --workers 32
@@ -84,7 +84,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate manifest with phonemes and d-vectors")
     parser.add_argument("--ljs-root", type=Path, required=True, help="Path to LJSpeech/")
     parser.add_argument("--audio-dir", type=Path, required=True, help="Path to LJS_accented_16K/")
-    parser.add_argument("--phones-dir", type=Path, required=True, help="Path to phones_16ms/")
+    parser.add_argument("--phones-dir", type=Path, required=True, help="Path to phones_20ms/")
     parser.add_argument("--dvec-dir", type=Path, required=True, help="Path to VCTK_refs_16K_embeds/")
     parser.add_argument("--output", type=Path, default=Path("data/manifest_native.jsonl"))
     parser.add_argument("--workers", type=int, default=32)

@@ -62,10 +62,10 @@ python mfa_upsample_batch.py \
   --corpus-dir mfa/corpus_ljs_accented \
   --dict english_us_mfa \
   --acoustic english_mfa \
-  --out-align mfa/alignments_16ms \
-  --out-frames phones_16ms \
-  --hop-ms 16 \
+  --out-align mfa/alignments_20ms \
+  --out-frames phones_20ms \
+  --hop-ms 20 \
   --jobs 32
 
-[Opt] rm -rf mfa/alignments_16ms # temporary folder
+[Opt] rm -rf mfa/alignments_20ms # temporary folder
 ```

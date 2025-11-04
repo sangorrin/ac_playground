@@ -3,8 +3,8 @@
 #   --corpus-dir mfa/corpus_ljs_accented \
 #   --dict english_us_mfa \
 #   --acoustic english_mfa \
-#   --out-align mfa/alignments_16ms \
-#   --out-frames phones_16ms \
+#   --out-align mfa/alignments_20ms \
+#   --out-frames phones_20ms \
 #   --hop-ms 16 \
 #   --jobs 32
 import argparse, subprocess, json, os
@@ -52,7 +52,7 @@ def build_phoneme_map(textgrids, existing: Path|None):
     return {p:i for i,p in enumerate(ordered)}
 
 
-def upsample_textgrid_to_ids(tg_path: Path, out_dir: Path, pmap: dict[str,int], sr=16000, hop=256):
+def upsample_textgrid_to_ids(tg_path: Path, out_dir: Path, pmap: dict[str,int], sr=16000, hop=320):
     tg = TextGrid.fromFile(tg_path)
     tier = next((t for t in tg.tiers if t.name and t.name.lower().startswith("phone")), None)
     if tier is None:
@@ -91,7 +91,7 @@ def main():
     ap.add_argument("--acoustic", default="english_mfa", help="MFA acoustic model name or path")
     ap.add_argument("--out-align", required=True)
     ap.add_argument("--out-frames", required=True, help="Output dir for phone IDs (int16)")
-    ap.add_argument("--hop-ms", type=float, default=16.0, help="Frame hop in milliseconds (default: 16ms)")
+    ap.add_argument("--hop-ms", type=float, default=20.0, help="Frame hop in milliseconds (default: 20ms)")
     ap.add_argument("--sample-rate", type=int, default=16000, help="Audio sample rate (default: 16000)")
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--skip-align-if-exists", action="store_true")

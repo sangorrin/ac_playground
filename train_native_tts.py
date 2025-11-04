@@ -108,7 +108,7 @@ def main():
     hw_config = get_hardware_config(args.vram, args.vcpus)
 
     # Load phonemes
-    phoneme_map_path = Path("phones_16ms/phoneme_map.json")
+    phoneme_map_path = Path("phones_20ms/phoneme_map.json")
     with phoneme_map_path.open("r") as f:
         phoneme_map = json.load(f)
     phoneme_list = sorted(phoneme_map.keys(), key=lambda k: phoneme_map[k])
