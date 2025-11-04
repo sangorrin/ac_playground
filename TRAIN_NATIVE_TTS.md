@@ -9,29 +9,6 @@ In the native fs, not conda aligner env.
 pod# pip install coqui-tts soundfile
 ```
 
-Pad with silence the phonemes vectors to match the length of f0 20ms vectors
-```bash
-python scripts/fix_phones_lengths.py \
-    --phones-dir phones_20ms \
-    --f0-dir f0_20ms \
-    --out-dir phones_20ms_fix \
-    --workers 32
-rm -rf phones_20ms
-mv phones_20ms_fix phones_20ms
-```
-
-Perform sanity checks on all the artifacts we have created so far
-```bash
-python check_features_20ms.py \
-    --wav-dir LJS_accented_16K \
-    --phones-dir phones_20ms \
-    --f0-dir f0_20ms \
-    --spk-embeds-dir VCTK_refs_16K_embeds \
-    --report sanity_report.csv \
-    --limit 0 \
-    --workers 32 -->
-```
-
 Generate the manifest for coqui-tts
 ```bash
 pod# python make_manifest_native.py \

@@ -149,7 +149,17 @@ pod# python resample_to_16k.py \
   --jobs 32 --delete-src
 ```
 
-# 4. MFA Alignment (20ms frames)
+# 4. F0 Extraction (20ms frames, YAAPT)
+
+Run F0 Batch
+```bash
+pod# python f0_20ms_batch.py \
+  --in-wav-dir /workspace/augmented_data/wavs_16k \
+  --out-dir /workspace/augmented_data/f0_features \
+  --workers 32
+```
+
+# 5. MFA Alignment (20ms frames)
 
 We need to run this on a conda environment for compatibility
 ```bash
@@ -181,7 +191,7 @@ Prepare Corpus files (`/workspace/mfa/corpus/{speaker}/{utt_id}_{speaker}.{wav,l
 pod# mkdir -p mfa
 pod# python mfa_prepare.py \
       --ljs-root data/LJSpeech-1.1
-      --accented-wav-dir augmented_data/wavs_16k \
+      --accented-wav-dir /workspace/augmented_data/wavs_16k \
       --out-corpus mfa/corpus \
       --workers 32 --link hard
 ```
@@ -198,24 +208,21 @@ pod# python mfa_upsample_batch.py \
   --dict english_us_mfa \
   --acoustic english_mfa \
   --out-align mfa/alignments_20ms \
-  --out-frames /workspace/augmented_data/mfa_alignments \
+  --out-frames mfa/phones_20ms \
   --hop-ms 20 \
   --jobs 32
-
-pod# rm -rf mfa/
 ```
 
-# 5. F0 Extraction (20ms frames, YAAPT)
-
-Run F0 Batch
+Pad with silrnvr the phonemes vectors to match the length of f0 20ms vectors
 ```bash
-pod# python f0_20ms_batch.py \
-  --in-wav-dir /workspace/augmented_data/wavs_16k \
-  --out-dir /workspace/augmented_data/f0_features \
-  --workers 32
+python fix_phones_lengths.py \
+    --phones-dir phones_20ms \
+    --f0-dir /workspace/augmented_data/f0_features \
+    --out-dir /workspace/augmented_data/mfa_alignments \
+    --workers 32
 ```
 
-## 6. Speaker Embeddings (ECAPA-TDNN)
+# 6. Speaker Embeddings (ECAPA-TDNN)
 
 Run Speaker Embedding Batch
 ```bash
@@ -232,4 +239,18 @@ pod# python
 import numpy as np
 print(np.load("VCTK_refs_16K_embeds/p264.npy").shape)
   # -> (192,)
+```
+
+# 7. Sanity checks
+
+Perform sanity checks on all the artifacts we have created so far
+```bash
+python check_features_20ms.py \
+    --wav-dir /workspace/augmented_data/wavs_16k \
+    --phones-dir /workspace/augmented_data/mfa_alignments \
+    --f0-dir /workspace/augmented_data/f0_features \
+    --spk-embeds-dir /workspace/augmented_data/speaker_embeddings \
+    --report sanity_report.csv \
+    --limit 0 \
+    --workers 32
 ```
