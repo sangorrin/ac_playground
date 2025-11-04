@@ -1,7 +1,7 @@
 import os
 import glob
 import argparse
-import numpy as np
+import json
 import torch
 from pathlib import Path
 
@@ -36,27 +36,38 @@ def get_hardware_config(vram_gb=None, vcpus=None):
 
 
 def calculate_num_chars(mfa_dir):
-    """Calculate num_chars from MFA alignment files by finding max phoneme ID."""
-    max_phoneme_id = 0
-    npy_files = glob.glob(os.path.join(mfa_dir, "*.npy"))
+    """
+    Calculate num_chars from MFA phoneme_map.json (exactly like inference).
 
-    if not npy_files:
-        print(f"Warning: No MFA files found in {mfa_dir}, using default num_chars=256")
-        return 256
+    Raises:
+        FileNotFoundError: If phoneme_map.json is missing
+        ValueError: If phoneme_map.json is empty or invalid
+    """
+    phoneme_map_path = Path(mfa_dir) / "phoneme_map.json"
 
-    # Sample some files to find max phoneme ID
-    sample_size = min(100, len(npy_files))
-    for npy_file in npy_files[:sample_size]:
-        try:
-            phonemes = np.load(npy_file)
-            max_phoneme_id = max(max_phoneme_id, int(phonemes.max()))
-        except Exception as e:
-            print(f"Warning: Could not load {npy_file}: {e}")
-            continue
+    if not phoneme_map_path.exists():
+        raise FileNotFoundError(
+            f"❌ FATAL: phoneme_map.json not found at {phoneme_map_path}\n"
+            f"   This file is required and should be created by mfa_upsample_batch.py\n"
+            f"   Please run MFA alignment preprocessing first."
+        )
 
-    # Add buffer for safety (pad token, etc.)
-    num_chars = max_phoneme_id + 10
-    print(f"Calculated num_chars={num_chars} from MFA files (max_phoneme_id={max_phoneme_id})")
+    with phoneme_map_path.open("r", encoding="utf-8") as f:
+        phoneme_map = json.load(f)
+
+    if not phoneme_map:
+        raise ValueError(
+            f"❌ FATAL: phoneme_map.json at {phoneme_map_path} is empty!\n"
+            f"   Cannot determine vocabulary size. Check MFA preprocessing."
+        )
+
+    # max ID + 1 for vocab size (IDs are 0-indexed)
+    max_phoneme_id = max(phoneme_map.values())
+    num_chars = max_phoneme_id + 1
+
+    print(f"✅ Loaded phoneme_map.json: {len(phoneme_map)} phonemes, num_chars={num_chars}")
+    print(f"   (max phoneme ID: {max_phoneme_id}, 'sil' → {phoneme_map.get('sil', 'N/A')})")
+
     return num_chars
 
 
@@ -72,14 +83,14 @@ def native_tts_formatter(root_path, meta_file=None, **kwargs):
 
     Directory structure:
     root_path/
-        wavs_16khz/LJ001-0001_p225.wav
+        wavs_16k/LJ001-0001_p225.wav
         mfa_alignments/LJ001-0001_p225.npy
         f0_features/LJ001-0001_p225.npy
         speaker_embeddings/p225.npy
     """
     items = []
 
-    wav_dir = os.path.join(root_path, "wavs_16khz")
+    wav_dir = os.path.join(root_path, "wavs_16k")
     mfa_dir = os.path.join(root_path, "mfa_alignments")
     f0_dir = os.path.join(root_path, "f0_features")
     spk_emb_dir = os.path.join(root_path, "speaker_embeddings")
