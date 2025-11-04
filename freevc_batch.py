@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # python freevc_batch.py --num 1000 --num-random-speakers=1 --workers 1 --use_cuda [--ljs_dir LJSpeech00 --vctk_dir data/VCTK_refs_16K --out_dir out_tmp]
-# Nota: este script carga el modelo una sola vez y evita relanzarlo; eso ya acelera respecto al CLI. 
+# Nota: este script carga el modelo una sola vez y evita relanzarlo; eso ya acelera respecto al CLI.
 # Para más velocidad, mantén workers=1 o 2; más hilos no suelen ayudar en un solo GPU con este modelo.
 import argparse, os, glob, random, time, sys
 from pathlib import Path
@@ -11,9 +11,9 @@ def main():
     import soundfile as sf
 
     ap = argparse.ArgumentParser(description="FreeVC batch: make K random speaker pairs per LJS wav.")
-    ap.add_argument("--ljs_dir",   type=str, default="LJSpeech", help="Dir of LJS wavs (e.g., data/LJSpeech_16K/wavs)")
+    ap.add_argument("--ljs_dir",   type=str, default="LJSpeech", help="Dir of LJS wavs")
     ap.add_argument("--vctk_dir",  type=str, default="data/VCTK_refs_16K", help="Dir of VCTK ref wavs (one per speaker)")
-    ap.add_argument("--out_dir",   type=str, default="out_tmp", help="Output dir for VC wavs (24 kHz)")
+    ap.add_argument("--out_dir",   type=str, default="out_24k", help="Output dir for VC wavs (24 kHz)")
     ap.add_argument("--num",       type=int, default=0, help="How many LJS items to use (0 = all found)")
     ap.add_argument("--num-random-speakers", dest="k", type=int, default=1, help="Speakers per LJS item")
     ap.add_argument("--workers",   type=int, default=1, help="Parallel workers (GPU => forces 1)")
