@@ -13,7 +13,7 @@ def main():
     ap = argparse.ArgumentParser(description="FreeVC batch: make K random speaker pairs per LJS wav.")
     ap.add_argument("--ljs_dir",   type=str, default="LJSpeech", help="Dir of LJS wavs")
     ap.add_argument("--vctk_dir",  type=str, default="data/VCTK_refs_16K", help="Dir of VCTK ref wavs (one per speaker)")
-    ap.add_argument("--out_dir",   type=str, default="out_24k", help="Output dir for VC wavs (24 kHz)")
+    ap.add_argument("--out_dir",   type=str, default="wavs_24k", help="Output dir for VC wavs (24 kHz)")
     ap.add_argument("--num",       type=int, default=0, help="How many LJS items to use (0 = all found)")
     ap.add_argument("--num-random-speakers", dest="k", type=int, default=1, help="Speakers per LJS item")
     ap.add_argument("--workers",   type=int, default=1, help="Parallel workers (GPU => forces 1)")

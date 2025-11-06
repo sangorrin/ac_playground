@@ -27,22 +27,26 @@ cat ~/.ssh/runpod_ed25519.pub
 ## Deploy a Runpod
 
 Network volume
+- Choose region where RTX 4090 availability is high (US-IL-1)
+- Give it a name `ac_results_volume`
 - Create a 100GB network volume to store the results longterm
 
 GPU pod
 - clikc Pods > Deploy a Pod
-  - Choose: GPU, Secure Cloud, Any Region
-    [Note] Do not choose Community Cloud (network problems)
-  - Additional Filters:
-    - select same CUDA version as template (e.g. 12.8)
+  - Choose: GPU, Secure Cloud, Select Network Volume, Region US-IL-1
+    - Additional Filters: CUDA 12.8
   - Select RTX4090
-  - Storage: set the size to 100GB (you can edit the pod to increase it)
-  - Attach a Network Volume storage with 100GB
-  - Select Pod Template
-    - Runpod Pytorch 2.8.0
-    - runpod/pytorch:1.0.1-cu1281-torch280-ubuntu2404
-  - Select On-Demand
-  - Check SSH Terminal Access and Jupyter
+  - Pod Template
+    - Runpod Pytorch 2.8.0 (default)
+    - Edit > 100 GB > Set Overrides
+  - GPU Count: 1 (default)
+  - On-Demand (defalt)
+  - Check SSH Terminal Access and Jupyter (default)
+
+[NOTE] The network volume gets mounted at /workspace.
+If not fast enough, use the runpod SSD disk (mkdir /word)
+Preparing the augmented data in /workspace is not slow and it is useful
+because you can stop the pod and still have the data in the networ volume.
 
 ## Accessing the POD via SSH
 
@@ -61,9 +65,6 @@ Host runpod-1
 EOF
 
 ssh runpod-1
-pod# screen -S session
-  # Detach: Ctrl + A, then D
-  # Reattach: screen -r session
 ```
 
 Check CUDA and torch
@@ -85,13 +86,13 @@ print("Name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "
 Get the scripts
 ```bash
 pod# cd /workspace
-pod# git clone ...
+pod# git clone https://github.com/sangorrin/ac_playground.git
 [Alt] scp -pC *.py  runpod-1:/workspace/
 ```
 
 Install system packages
 ```bash
-pod# apt-get update -y && apt-get install -y ffmpeg unzip libsndfile1 zip time sox tree
+pod# apt-get update -y && apt-get install -y screen ffmpeg unzip libsndfile1 zip time sox tree
 ```
 
 Install pip dependencies
@@ -100,15 +101,22 @@ pod# python -m pip install --upgrade pip
 pod# pip install coqui-tts soundfile amfm_decompy speechbrain librosa hf_transfer
 ```
 
-# 2. Download Datasets
-
-Download and extract the LJSpeech dataset.
+Start screen session
 ```bash
-pod# mkdir -p data
-pod# curl -L https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2 | tar -xjf - -C data
+pod# screen -S session
+  # Detach: Ctrl + A, then D
+  # Reattach: screen -r session
 ```
 
-Download and unzip the VCTK corpus.
+# 2. Download Datasets
+
+Download and extract the LJSpeech dataset at `/workspace`
+```bash
+pod# mkdir -p data
+pod# curl -L https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2 | tar -xjf - -C data --no-same-owner
+```
+
+Download and unzip the VCTK corpus (slow, better local)
 ```bash
 pod# mkdir -p data/VCTK && \
   curl -L https://datashare.ed.ac.uk/download/DS_10283_3443.zip -o data/DS_10283_3443.zip && \
@@ -119,32 +127,33 @@ pod# mkdir -p data/VCTK && \
 
 Create minimal VCTK refs (one 16kHz mono file per speaker)
 ```bash
-mkdir -p data/VCTK_refs_16K
-for d in data/VCTK/wav48_silence_trimmed/*; do
+pod# mkdir -p data/VCTK_refs_16k
+pod# for d in data/VCTK/wav48_silence_trimmed/*; do
   s="$(basename "$d")"
   f="$(ls "$d"/${s}_*_mic1.flac 2>/dev/null | head -n 1)"
-  [ -f "$f" ] && ffmpeg -nostdin -y -i "$f" -ac 1 -ar 16000 "data/VCTK_refs_16K/${s}.wav"
+  [ -f "$f" ] && ffmpeg -nostdin -y -i "$f" -ac 1 -ar 16000 "data/VCTK_refs_16k/${s}.wav"
 done
 ```
 
 # 3. Augment Native Audio Utterances
 
-Run FreeVC Batch
+Run FreeVC Batch (slow)
 ```bash
-pod# mkdir -p data/out_24k
-pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' python freevc_batch.py \
-  --ljs_dir data/LJSpeech-1.1/wavs \
-  --vctk_dir data/VCTK/wav48_silence_trimmed \
-  --out_dir data/out_24k \
+pod# mkdir -p /workspace/data/wavs_24k
+pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' python \
+  /workspace/ac_playground/freevc_batch.py \
+  --ljs_dir /workspace/data/LJSpeech-1.1/wavs \
+  --vctk_dir /workspace/data/VCTK_refs_16k \
+  --out_dir /workspace/data/wavs_24k \
   --num-random-speakers 5 \
   --use_cuda
 ```
 
-Convert 24khz audios to 16kHz mono
+Convert 24khz audios to 16kHz mono (fast)
 ```bash
 pod# mkdir -p /workspace/augmented_data/wavs_16k
-pod# python resample_to_16k.py \
-  /workspace/data/out_24k \
+pod# python /workspace/ac_playground/resample_to_16k.py \
+  /workspace/data/wavs_24k \
   /workspace/augmented_data/wavs_16k \
   --jobs 32 --delete-src
 ```
@@ -153,7 +162,7 @@ pod# python resample_to_16k.py \
 
 Run F0 Batch
 ```bash
-pod# python f0_20ms_batch.py \
+pod# python /workspace/ac_playground/f0_20ms_batch.py \
   --in-wav-dir /workspace/augmented_data/wavs_16k \
   --out-dir /workspace/augmented_data/f0_features \
   --workers 32
@@ -173,71 +182,75 @@ pod# conda config --set auto_activate_base false
 
 Create aligner environment
 ```bash
+pod# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+pod# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 pod# conda create -n aligner -y python=3.11
 pod# conda activate aligner
-pod# conda install -c conda-forge -y montreal-forced-aligner
-pod# pip install textgrid tqdm soundfile numpy
-pod# mfa version
+pod (aligner)# conda install -c conda-forge -y montreal-forced-aligner
+pod (aligner)# pip install textgrid tqdm soundfile numpy
+pod (aligner)# mfa version
 ```
 
 Download MFA english models
 ```bash
-pod# mfa model download dictionary english_us_mfa
-pod# mfa model download acoustic english_mfa
+pod (aligner)# mfa model download dictionary english_us_mfa
+pod (aligner)# mfa model download acoustic english_mfa
 ```
 
-Prepare Corpus files (`/workspace/mfa/corpus/{speaker}/{utt_id}_{speaker}.{wav,lab}`)
+Prepare Corpus files (slow)
 ```bash
-pod# mkdir -p mfa
-pod# python mfa_prepare.py \
-      --ljs-root data/LJSpeech-1.1
+pod (aligner)# mkdir -p /workspace/data/mfa
+pod (aligner)# python /workspace/ac_playground/mfa_prepare.py \
+      --ljs-root /workspace/data/LJSpeech-1.1 \
       --accented-wav-dir /workspace/augmented_data/wavs_16k \
-      --out-corpus mfa/corpus \
+      --out-corpus /workspace/data/mfa/corpus \
       --workers 32 --link hard
 ```
 
-Run MFA + Upsample to 20ms
+Run MFA + Upsample to 20ms (slow)
 ```bash
 # Recommended env knobs
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-ulimit -n 4096
+pod (aligner)# export OMP_NUM_THREADS=1
+pod (aligner)# export MKL_NUM_THREADS=1
+pod (aligner)# ulimit -n 4096
 
-pod# python mfa_upsample_batch.py \
-  --corpus-dir mfa/corpus \
+pod (aligner)# python /workspace/ac_playground/mfa_upsample_batch.py \
+  --corpus-dir /workspace/data/mfa/corpus \
   --dict english_us_mfa \
   --acoustic english_mfa \
-  --out-align mfa/alignments_20ms \
-  --out-frames mfa/phones_20ms \
+  --out-align /workspace/data/mfa/mfa_alignments \
+  --out-frames /workspace/data/mfa/phones_20ms \
   --hop-ms 20 \
   --jobs 32
 ```
 
-Pad with silrnvr the phonemes vectors to match the length of f0 20ms vectors
+Pad with sil the phoneme vectors to match the length of f0 20ms vectors (fast)
 ```bash
-python fix_phones_lengths.py \
-    --phones-dir phones_20ms \
+pod (aligner)# python /workspace/ac_playground/fix_phones_lengths.py \
+    --phones-dir /workspace/data/mfa/phones_20ms \
     --f0-dir /workspace/augmented_data/f0_features \
     --out-dir /workspace/augmented_data/mfa_alignments \
     --workers 32
+pod (aligner)# conda deactivate
 ```
 
 # 6. Speaker Embeddings (ECAPA-TDNN)
 
 Run Speaker Embedding Batch
 ```bash
-pod# python speaker_embed_batch.py \
-  --wav-dir data/VCTK_refs_16K \
+pod# python /workspace/ac_playground/speaker_embed_batch.py \
+  --wav-dir /workspace/data/VCTK_refs_16k \
   --out-dir /workspace/augmented_data/speaker_embeddings \
   --batch-size 64 --device cuda
 ```
 
 Verify
 ```bash
-pod# ls VCTK_refs_16K_embeds | wc -l
+pod# ls /workspace/augmented_data/speaker_embeddings | wc -l
+  110
 pod# python
 import numpy as np
-print(np.load("VCTK_refs_16K_embeds/p264.npy").shape)
+print(np.load("/workspace/augmented_data/speaker_embeddings/p264.npy").shape)
   # -> (192,)
 ```
 
@@ -245,12 +258,25 @@ print(np.load("VCTK_refs_16K_embeds/p264.npy").shape)
 
 Perform sanity checks on all the artifacts we have created so far
 ```bash
-python check_features_20ms.py \
+pod# python /workspace/ac_playground/check_features_20ms.py \
     --wav-dir /workspace/augmented_data/wavs_16k \
     --phones-dir /workspace/augmented_data/mfa_alignments \
     --f0-dir /workspace/augmented_data/f0_features \
     --spk-embeds-dir /workspace/augmented_data/speaker_embeddings \
-    --report sanity_report.csv \
+    --report /workspace/sanity_report.csv \
     --limit 0 \
     --workers 32
+[SUMMARY] total=65498 ok=65498 bad=0
+[REPORT]  /workspace/sanity_report.csv
 ```
+
+Get the sanity_report.csv and give it to chatGPT (if there are any errors)
+```bash
+mac# scp -pC runpod-1:/workspace/sanity_report.csv .
+```
+
+# Estimated times and resource usage
+
+Time: 7h
+Network volume: 80GB
+Pod disk: 15GB

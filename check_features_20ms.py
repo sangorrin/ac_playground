@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Usage:
 #   python check_features_20ms.py \
-#     --wav-dir LJS_accented_16K \
-#     --phones-dir phones_20ms \
-#     --f0-dir f0_20ms \
-#     --spk-embeds-dir VCTK_refs_16K_embeds \
-#     --report sanity_report.csv \
+#     --wav-dir /workspace/augmented_data/wavs_16k \
+#     --phones-dir /workspace/augmented_data/mfa_alignments \
+#     --f0-dir /workspace/augmented_data/f0_features \
+#     --spk-embeds-dir /workspace/augmented_data/speaker_embeddings \
+#     --report /workspace/sanity_report.csv \
 #     --limit 0 \
 #     --workers 32
 #
