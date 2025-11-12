@@ -98,7 +98,7 @@ pod# apt-get update -y && apt-get install -y screen ffmpeg unzip libsndfile1 zip
 Install pip dependencies
 ```bash
 pod# python -m pip install --upgrade pip
-pod# pip install coqui-tts soundfile amfm_decompy speechbrain librosa hf_transfer
+pod# pip install soundfile amfm_decompy speechbrain librosa hf_transfer
 ```
 
 Start screen session
@@ -278,5 +278,14 @@ mac# scp -pC runpod-1:/workspace/sanity_report.csv .
 # Estimated times and resource usage
 
 Time: 7h
-Network volume: 80GB
+Network volume: 80GB (only 13GB are from augmented_data)
 Pod disk: 15GB
+
+```bash
+pod# du -h augmented_data/
+  1.1M	augmented_data/speaker_embeddings
+  67M	augmented_data/mfa_alignments
+  108M	augmented_data/f0_features
+  13G	augmented_data/wavs_16k
+  13G	augmented_data/
+```
