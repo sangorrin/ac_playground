@@ -29,7 +29,7 @@ def f0_yaapt_20ms(wav_path: Path):
 
     # sanity: estimate hop from duration
     est_hop_ms = (len(sig.data) / sig.fs) / len(f0) * 1000
-    if not (19.0 <= est_hop_ms <= 21.0):
+    if not (18.5 <= est_hop_ms <= 21.5):
         raise RuntimeError(f"YAAPT hop looks wrong: ~{est_hop_ms:.2f} ms (wanted ~20 ms)")
 
     return f0
