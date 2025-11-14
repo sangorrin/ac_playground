@@ -48,12 +48,17 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
         issues.append(("phones_load", str(e)))
         T_ph = 0
 
-    # f0: mmap; NaNs allowed; only shape/len used here for speed
+    # f0: check the shape and the lack of NaN/Inf values
     try:
         f0 = np.load(f0f, mmap_mode="r", allow_pickle=True)
         if f0.ndim != 1:
             issues.append(("f0_shape", str(f0.shape)))
         T_f0 = int(f0.shape[0])
+        # Check for NaN or Inf values
+        if np.isnan(f0).any():
+            issues.append(("f0_has_nan", f"count={np.isnan(f0).sum()}"))
+        if np.isinf(f0).any():
+            issues.append(("f0_has_inf", f"count={np.isinf(f0).sum()}"))
     except Exception as e:
         issues.append(("f0_load", str(e)))
         T_f0 = 0
