@@ -39,11 +39,17 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
         if ph.dtype != np.int16:
             issues.append(("phones_dtype", str(ph.dtype)))
         T_ph = int(ph.shape[0])
+        # Check for NaN or Inf (should never happen in int16, but check anyway)
+        if np.isnan(ph.astype(np.float32)).any():
+            issues.append(("phones_has_nan", f"count={np.isnan(ph.astype(np.float32)).sum()}"))
         if max_pid is not None:
             # fast range check via memmap ops
             pmin, pmax = int(ph.min()), int(ph.max())
             if pmin < 0 or pmax > max_pid:
                 issues.append(("phones_out_of_range", f"min={pmin} max={pmax} max_pid={max_pid}"))
+        # Check for zero-length
+        if T_ph == 0:
+            issues.append(("phones_empty", "length=0"))
     except Exception as e:
         issues.append(("phones_load", str(e)))
         T_ph = 0
@@ -59,6 +65,14 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
             issues.append(("f0_has_nan", f"count={np.isnan(f0).sum()}"))
         if np.isinf(f0).any():
             issues.append(("f0_has_inf", f"count={np.isinf(f0).sum()}"))
+        # Check for zero-length
+        if T_f0 == 0:
+            issues.append(("f0_empty", "length=0"))
+        # Check for unrealistic F0 values (human voice: 50-500 Hz typical, allow 0 for unvoiced)
+        f0_nonzero = f0[f0 > 0]
+        if len(f0_nonzero) > 0:
+            if f0_nonzero.min() < 50 or f0_nonzero.max() > 1000:
+                issues.append(("f0_out_of_range", f"min={f0_nonzero.min():.1f} max={f0_nonzero.max():.1f}"))
     except Exception as e:
         issues.append(("f0_load", str(e)))
         T_f0 = 0
@@ -70,6 +84,14 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
         if sr_expected and sr != sr_expected:
             issues.append(("wav_sr", f"{sr} != {sr_expected}"))
         dur_s = info.frames / float(sr) if sr > 0 else 0.0
+        # Check for suspiciously short/long audio
+        if dur_s < 0.1:
+            issues.append(("wav_too_short", f"{dur_s:.3f}s"))
+        if dur_s > 30.0:
+            issues.append(("wav_too_long", f"{dur_s:.1f}s"))
+        # Check for mono
+        if info.channels != 1:
+            issues.append(("wav_not_mono", f"channels={info.channels}"))
     except Exception as e:
         issues.append(("wav_info", str(e)))
         dur_s = 0.0
@@ -87,12 +109,27 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
     if T_f0 > 0 and T_ph > 0 and abs(T_f0 - T_ph) > 1:
         issues.append(("length_mismatch", f"f0={T_f0} phones={T_ph}"))
 
-    # speaker embedding presence
+    # speaker embedding presence and validity
     spk = speaker_from_utt(utt)
     if spk:
         spkf = spk_dir / f"{spk}.npy"
         if not spkf.exists():
             issues.append(("missing_spk_embed", spkf.name))
+        else:
+            # Check speaker embedding validity
+            try:
+                spk_emb = np.load(spkf, mmap_mode="r")
+                if spk_emb.ndim != 1:
+                    issues.append(("spk_emb_shape", str(spk_emb.shape)))
+                if np.isnan(spk_emb).any():
+                    issues.append(("spk_emb_has_nan", f"count={np.isnan(spk_emb).sum()}"))
+                if np.isinf(spk_emb).any():
+                    issues.append(("spk_emb_has_inf", f"count={np.isinf(spk_emb).sum()}"))
+                # Expected 192-dim ECAPA embeddings
+                if len(spk_emb) != 192:
+                    issues.append(("spk_emb_wrong_dim", f"expected=192 got={len(spk_emb)}"))
+            except Exception as e:
+                issues.append(("spk_emb_load", str(e)))
     else:
         issues.append(("no_speaker_suffix", ""))
 
