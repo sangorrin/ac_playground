@@ -320,6 +320,13 @@ pod# for speaker_dir in /dataset/data/ARCTIC_16k_speakers/*/; do
   done
 done
 
+# Create minimal ARCTIC refs (one 16kHz mono file per speaker)
+pod# mkdir -p /dataset/data/ARCTIC_refs_16k
+pod# ls /dataset/arctic_data/wavs_16k/ | head -24 | while read wav; do
+  speaker=$(echo "$wav" | rev | cut -d'_' -f1 | rev)
+  cp "/dataset/arctic_data/wavs_16k/$wav" "/dataset/data/ARCTIC_refs_16k/$speaker"
+done
+
 # Cleanup storage
 pod# rm -rf /dataset/data/ARCTIC_16k_speakers
 ```
@@ -369,10 +376,19 @@ pod (aligner)# conda deactivate
 Extract one embedding per ARCTIC speaker
 ```bash
 pod# python /workspace/ac_playground/speaker_embed_batch.py \
-  --wav-dir /dataset/arctic_data/wavs_16k \
+  --wav-dir /dataset/data/ARCTIC_refs_16k \
   --out-dir /dataset/arctic_data/speaker_embeddings \
   --batch-size 64 \
   --device cuda
+```
+
+Output Structure
+```
+/dataset/arctic_data/
+├── wavs_16k/arctic_a0001_ABA.wav  # Flat structure with speaker suffix
+├── f0_features/arctic_a0001_ABA.npy
+├── mfa_alignments/arctic_a0001_ABA.npy (also phoneme_map.json)
+└── speaker_embeddings/ABA.npy
 ```
 
 Verify L2-ARCTIC features.
