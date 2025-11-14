@@ -98,7 +98,7 @@ pod# apt-get update -y && apt-get install -y screen ffmpeg unzip libsndfile1 zip
 Install pip dependencies
 ```bash
 pod# python -m pip install --upgrade pip
-pod# pip install soundfile amfm_decompy speechbrain librosa hf_transfer
+pod# pip install "huggingface_hub<1.0" soundfile amfm_decompy speechbrain librosa hf_transfer
 ```
 
 Start screen session
@@ -276,7 +276,7 @@ Get the sanity_report.csv and give it to chatGPT (if there are any errors)
 mac# scp -pC runpod-1:/workspace/sanity_report.csv .
 ```
 
-# 8. L2-ARCTIC Dataset
+# 8. L2-ARCTIC Dataset for Ground Truth
 
 Download L2-ARCTIC
 1. Fill the request form: https://psi.engr.tamu.edu/l2-arctic-corpus/ (Download section).
@@ -372,7 +372,7 @@ pod# python /workspace/ac_playground/speaker_embed_batch.py \
   --wav-dir /dataset/arctic_data/wavs_16k \
   --out-dir /dataset/arctic_data/speaker_embeddings \
   --batch-size 64 \
-  --device cpu
+  --device cuda
 ```
 
 Verify L2-ARCTIC features.
