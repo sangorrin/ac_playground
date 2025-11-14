@@ -108,7 +108,7 @@ pod# screen -S session
   # Reattach: screen -r session
 ```
 
-# 2. Download Datasets
+# 2. Download Datasets for Training
 
 Download and extract the LJSpeech dataset at `/workspace`
 ```bash
@@ -187,6 +187,7 @@ pod# conda tos accept --override-channels --channel https://repo.anaconda.com/pk
 pod# conda create -n aligner -y python=3.11
 pod# conda activate aligner
 pod (aligner)# conda install -c conda-forge -y montreal-forced-aligner
+  [If Error] conda install -c conda-forge montreal-forced-aligner kalpy kaldi=*=cpu* openfst
 pod (aligner)# pip install textgrid tqdm soundfile numpy
 pod (aligner)# mfa version
 ```
@@ -275,6 +276,116 @@ Get the sanity_report.csv and give it to chatGPT (if there are any errors)
 mac# scp -pC runpod-1:/workspace/sanity_report.csv .
 ```
 
+# 8. L2-ARCTIC Dataset
+
+Download L2-ARCTIC
+1. Fill the request form: https://psi.engr.tamu.edu/l2-arctic-corpus/ (Download section).
+2. In the email, choose **“L2-ARCTIC-V5.0 (everything packed)”** to get the full corpus (all 24 speakers).
+[Alt] Use the copy from my drive.
+```bash
+pod# mkdir -p /dataset/data/ARCTIC
+pod# cd /dataset/data/ARCTIC
+pod# pip install gdown
+pod# gdown --id 1q_Ijuz3jd3Rd2B11mB2dA_-upPeDLkxl
+pod# unzip -q l2arctic_release_v5.0.zip
+pod# rm l2arctic_release_v5.0.zip
+pod# for z in *.zip; do unzip -q "$z"; done && rm -f *.zip
+```
+
+Resample to 16kHz
+```bash
+pod# mkdir -p /dataset/data/ARCTIC_16k_speakers /dataset/arctic_data/wavs_16k
+
+# Resample each speaker folder separately (to speaker subfolders first)
+pod# for speaker_dir in /dataset/data/ARCTIC/*/; do
+  speaker=$(basename "$speaker_dir")
+  # Skip files (LICENSE, README, etc.)
+  if [[ -d "$speaker_dir" && "$speaker" != "suitcase_corpus" ]]; then
+    echo "Resampling speaker: $speaker"
+    python /workspace/ac_playground/resample_to_16k.py \
+      "$speaker_dir/wav" \
+      "/dataset/data/ARCTIC_16k_speakers/$speaker" \
+      --jobs 8
+  fi
+done
+
+# Flatten: Move all files to single directory with speaker suffix
+pod# for speaker_dir in /dataset/data/ARCTIC_16k_speakers/*/; do
+  speaker=$(basename "$speaker_dir")
+  for wav_file in "$speaker_dir"/*.wav; do
+    if [[ -f "$wav_file" ]]; then
+      basename=$(basename "$wav_file" .wav)
+      mv "$wav_file" "/dataset/arctic_data/wavs_16k/${basename}_${speaker}.wav"
+    fi
+  done
+done
+
+# Cleanup storage
+pod# rm -rf /dataset/data/ARCTIC_16k_speakers
+```
+
+Extract F0 (20ms frames)
+```bash
+pod# python /workspace/ac_playground/f0_20ms_batch.py \
+  --in-wav-dir /dataset/arctic_data/wavs_16k \
+  --out-dir /dataset/arctic_data/f0_features \
+  --workers 32
+```
+
+MFA Alignment (20ms frames)
+```bash
+pod# conda activate aligner
+
+# Prepare MFA corpus (creates .wav + .lab files from ARCTIC transcripts)
+pod (aligner)# python /workspace/ac_playground/mfa_prepare.py \
+  --arctic-root /dataset/data/ARCTIC \
+  --wav-dir /dataset/arctic_data/wavs_16k \
+  --out-corpus /dataset/arctic_data/mfa_corpus \
+  --workers 8 --link hard
+
+# Run MFA + upsample to 20ms
+pod (aligner)# export OMP_NUM_THREADS=1
+pod (aligner)# export MKL_NUM_THREADS=1
+pod (aligner)# ulimit -n 4096
+
+pod (aligner)# python /workspace/ac_playground/mfa_upsample_batch.py \
+  --corpus-dir /dataset/arctic_data/mfa_corpus \
+  --dict english_us_mfa \
+  --acoustic english_mfa \
+  --out-align /dataset/arctic_data/mfa_alignments_raw \
+  --out-frames /dataset/arctic_data/mfa_phones_20ms \
+  --hop-ms 20 \
+  --jobs 24 # only 24 speakers
+
+# Fix lengths to match F0
+pod (aligner)# python /workspace/ac_playground/fix_phones_lengths.py \
+  --phones-dir /dataset/arctic_data/mfa_phones_20ms \
+  --f0-dir /dataset/arctic_data/f0_features \
+  --out-dir /dataset/arctic_data/mfa_alignments \
+  --workers 24
+pod (aligner)# conda deactivate
+```
+
+Extract one embedding per ARCTIC speaker
+```bash
+pod# python /workspace/ac_playground/speaker_embed_batch.py \
+  --wav-dir /dataset/arctic_data/wavs_16k \
+  --out-dir /dataset/arctic_data/speaker_embeddings \
+  --batch-size 64 \
+  --device cpu
+```
+
+Verify L2-ARCTIC features.
+```bash
+pod# python /workspace/ac_playground/check_features_20ms.py \
+  --wav-dir /dataset/arctic_data/wavs_16k \
+  --phones-dir /dataset/arctic_data/mfa_alignments \
+  --f0-dir /dataset/arctic_data/f0_features \
+  --spk-embeds-dir /dataset/arctic_data/speaker_embeddings \
+  --report arctic_sanity_report.csv \
+  --workers 32
+```
+
 # Estimated times and resource usage
 
 Time: 7h
@@ -289,3 +400,4 @@ pod# du -h augmented_data/
   13G	augmented_data/wavs_16k
   13G	augmented_data/
 ```
+
