@@ -24,8 +24,8 @@ def f0_yaapt_20ms(wav_path: Path):
         fft_length=1024
     )
     f0 = pitch.samp_values.astype(np.float32)  # 20ms hop
-    # Convert unvoiced (0) to NaN to match your offline convention
-    f0[f0 <= 0] = np.nan
+    # Keep unvoiced segments as 0 (do NOT convert to NaN - causes model corruption)
+    # Coqui TTS expects 0 for unvoiced frames, will handle normalization internally
 
     # sanity: estimate hop from duration
     est_hop_ms = (len(sig.data) / sig.fs) / len(f0) * 1000
