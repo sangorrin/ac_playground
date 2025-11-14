@@ -9,7 +9,13 @@ from pathlib import Path
 import numpy as np
 import torch, torchaudio
 from torch.utils.data import DataLoader, Dataset
-from speechbrain.pretrained import EncoderClassifier
+
+# Use the modern speechbrain interface
+try:
+    from speechbrain.inference.interfaces import EncoderClassifier
+except ImportError:
+    # Fallback to old interface
+    from speechbrain.pretrained import EncoderClassifier
 
 
 class WavSet(Dataset):
