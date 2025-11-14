@@ -11,11 +11,7 @@ import torch, torchaudio
 from torch.utils.data import DataLoader, Dataset
 
 # Use the modern speechbrain interface
-try:
-    from speechbrain.inference.interfaces import EncoderClassifier
-except ImportError:
-    # Fallback to old interface
-    from speechbrain.pretrained import EncoderClassifier
+from speechbrain.inference import EncoderClassifier
 
 
 class WavSet(Dataset):
