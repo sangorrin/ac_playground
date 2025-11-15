@@ -4,7 +4,7 @@ This guide describes the complete workflow for preparing the augmented dataset f
 
 Target Dataset Format
 ```
-/workspace/augmented_dataset/
+/dataset/augmented_dataset/
   ├── wavs_16k/LJ001-0001_p225.wav (16kHz, ljspeech_id + vctk_speaker via freevc)
   ├── mfa_alignments/LJ001-0001_p225.npy (aligned phoneme IDs, 20ms frames, int16)
   ├── f0_features/LJ001-0001_p225.npy (F0 values, 20ms frames, YAAPTS)
@@ -37,16 +37,17 @@ GPU pod
     - Additional Filters: CUDA 12.8
   - Select RTX4090
   - Pod Template
-    - Runpod Pytorch 2.8.0 (default)
-    - Edit > 100 GB > Set Overrides
+    - Runpod Pytorch 2.8.0 (runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404)
+    - Edit > Set Overrides
+      - mount network volume at /dataset (default is /workspace)
+      - container disk: 100 GB should suffice
   - GPU Count: 1 (default)
   - On-Demand (defalt)
   - Check SSH Terminal Access and Jupyter (default)
 
-[NOTE] The network volume gets mounted at /workspace.
-If not fast enough, use the runpod SSD disk (mkdir /word)
-Preparing the augmented data in /workspace is not slow and it is useful
-because you can stop the pod and still have the data in the networ volume.
+[NOTE] The network volume might be a bit slower than the disk but I felt it
+was quite fast and you have the calm of being using permanent storage.
+If not fast enough, use the runpod SSD disk (/workspace)
 
 ## Accessing the POD via SSH
 
@@ -95,7 +96,7 @@ Install system packages
 pod# apt-get update -y && apt-get install -y screen ffmpeg unzip libsndfile1 zip time sox tree
 ```
 
-Install pip dependencies
+Install pip dependencies (python 3.12 by default)
 ```bash
 pod# python -m pip install --upgrade pip
 pod# pip install "huggingface_hub<1.0" soundfile amfm_decompy speechbrain librosa hf_transfer
@@ -106,12 +107,14 @@ Start screen session
 pod# screen -S session
   # Detach: Ctrl + A, then D
   # Reattach: screen -r session
+  # Detach: screen -d pid.tty.host
 ```
 
 # 2. Download Datasets for Training
 
 Download and extract the LJSpeech dataset at `/workspace`
 ```bash
+pod# cd /workspace
 pod# mkdir -p data
 pod# curl -L https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2 | tar -xjf - -C data --no-same-owner
 ```
@@ -151,10 +154,10 @@ pod# /usr/bin/time -f 'elapsed=%E cpu=%P maxrss=%MKB' python \
 
 Convert 24khz audios to 16kHz mono (fast)
 ```bash
-pod# mkdir -p /workspace/augmented_data/wavs_16k
+pod# mkdir -p /dataset/augmented_data/wavs_16k
 pod# python /workspace/ac_playground/resample_to_16k.py \
   /workspace/data/wavs_24k \
-  /workspace/augmented_data/wavs_16k \
+  /dataset/augmented_data/wavs_16k \
   --jobs 32 --delete-src
 ```
 
@@ -163,8 +166,8 @@ pod# python /workspace/ac_playground/resample_to_16k.py \
 Run F0 Batch
 ```bash
 pod# python /workspace/ac_playground/f0_20ms_batch.py \
-  --in-wav-dir /workspace/augmented_data/wavs_16k \
-  --out-dir /workspace/augmented_data/f0_features \
+  --in-wav-dir /dataset/augmented_data/wavs_16k \
+  --out-dir /dataset/augmented_data/f0_features \
   --workers 32
 ```
 
@@ -203,7 +206,7 @@ Prepare Corpus files (slow)
 pod (aligner)# mkdir -p /workspace/data/mfa
 pod (aligner)# python /workspace/ac_playground/mfa_prepare.py \
       --ljs-root /workspace/data/LJSpeech-1.1 \
-      --accented-wav-dir /workspace/augmented_data/wavs_16k \
+      --accented-wav-dir /dataset/augmented_data/wavs_16k \
       --out-corpus /workspace/data/mfa/corpus \
       --workers 32 --link hard
 ```
@@ -229,8 +232,8 @@ Pad with sil the phoneme vectors to match the length of f0 20ms vectors (fast)
 ```bash
 pod (aligner)# python /workspace/ac_playground/fix_phones_lengths.py \
     --phones-dir /workspace/data/mfa/phones_20ms \
-    --f0-dir /workspace/augmented_data/f0_features \
-    --out-dir /workspace/augmented_data/mfa_alignments \
+    --f0-dir /dataset/augmented_data/f0_features \
+    --out-dir /dataset/augmented_data/mfa_alignments \
     --workers 32
 pod (aligner)# conda deactivate
 ```
@@ -241,18 +244,8 @@ Run Speaker Embedding Batch
 ```bash
 pod# python /workspace/ac_playground/speaker_embed_batch.py \
   --wav-dir /workspace/data/VCTK_refs_16k \
-  --out-dir /workspace/augmented_data/speaker_embeddings \
+  --out-dir /dataset/augmented_data/speaker_embeddings \
   --batch-size 64 --device cuda
-```
-
-Verify
-```bash
-pod# ls /workspace/augmented_data/speaker_embeddings | wc -l
-  110
-pod# python
-import numpy as np
-print(np.load("/workspace/augmented_data/speaker_embeddings/p264.npy").shape)
-  # -> (192,)
 ```
 
 # 7. Sanity checks
@@ -260,10 +253,10 @@ print(np.load("/workspace/augmented_data/speaker_embeddings/p264.npy").shape)
 Perform sanity checks on all the artifacts we have created so far
 ```bash
 pod# python /workspace/ac_playground/check_features_20ms.py \
-    --wav-dir /workspace/augmented_data/wavs_16k \
-    --phones-dir /workspace/augmented_data/mfa_alignments \
-    --f0-dir /workspace/augmented_data/f0_features \
-    --spk-embeds-dir /workspace/augmented_data/speaker_embeddings \
+    --wav-dir /dataset/augmented_data/wavs_16k \
+    --phones-dir /dataset/augmented_data/mfa_alignments \
+    --f0-dir /dataset/augmented_data/f0_features \
+    --spk-embeds-dir /dataset/augmented_data/speaker_embeddings \
     --report /workspace/sanity_report.csv \
     --limit 0 \
     --workers 32

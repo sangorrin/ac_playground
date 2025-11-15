@@ -50,6 +50,13 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
         # Check for zero-length
         if T_ph == 0:
             issues.append(("phones_empty", "length=0"))
+        # Check average phoneme ID value
+        if T_ph > 0:
+            ph_mean = float(np.mean(ph))
+            # If mean is too close to 0, might indicate too many silence tokens
+            # Typical datasets should have diverse phoneme usage
+            if ph_mean < 1.0:
+                issues.append(("phones_mean_low", f"mean={ph_mean:.2f}"))
     except Exception as e:
         issues.append(("phones_load", str(e)))
         T_ph = 0
@@ -73,6 +80,12 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
         if len(f0_nonzero) > 0:
             if f0_nonzero.min() < 50 or f0_nonzero.max() > 1000:
                 issues.append(("f0_out_of_range", f"min={f0_nonzero.min():.1f} max={f0_nonzero.max():.1f}"))
+        # Check average F0 value (for voiced frames)
+        if len(f0_nonzero) > 0:
+            f0_mean = float(np.mean(f0_nonzero))
+            # Typical human voice: male ~120Hz, female ~220Hz, children ~300Hz
+            if f0_mean < 70 or f0_mean > 400:
+                issues.append(("f0_mean_unusual", f"mean={f0_mean:.1f}Hz"))
     except Exception as e:
         issues.append(("f0_load", str(e)))
         T_f0 = 0
@@ -128,6 +141,16 @@ def _check_one(utt, wf, phf, f0f, spk_dir, sr_expected, hop_s, max_pid):
                 # Expected 192-dim ECAPA embeddings
                 if len(spk_emb) != 192:
                     issues.append(("spk_emb_wrong_dim", f"expected=192 got={len(spk_emb)}"))
+                # Check average value and L2 norm
+                if len(spk_emb) > 0:
+                    spk_mean = float(np.mean(spk_emb))
+                    spk_norm = float(np.linalg.norm(spk_emb))
+                    # ECAPA embeddings typically have L2 norm around 1.0 after normalization
+                    if spk_norm < 0.5 or spk_norm > 2.0:
+                        issues.append(("spk_emb_norm_unusual", f"norm={spk_norm:.3f}"))
+                    # Mean should be close to 0 for normalized embeddings
+                    if abs(spk_mean) > 0.5:
+                        issues.append(("spk_emb_mean_unusual", f"mean={spk_mean:.3f}"))
             except Exception as e:
                 issues.append(("spk_emb_load", str(e)))
     else:
