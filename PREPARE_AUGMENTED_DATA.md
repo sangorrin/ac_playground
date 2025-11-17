@@ -248,28 +248,7 @@ pod# python /workspace/ac_playground/speaker_embed_batch.py \
   --batch-size 64 --device cuda
 ```
 
-# 7. Sanity checks
-
-Perform sanity checks on all the artifacts we have created so far
-```bash
-pod# python /workspace/ac_playground/check_features_20ms.py \
-    --wav-dir /dataset/augmented_data/wavs_16k \
-    --phones-dir /dataset/augmented_data/mfa_alignments \
-    --f0-dir /dataset/augmented_data/f0_features \
-    --spk-embeds-dir /dataset/augmented_data/speaker_embeddings \
-    --report /workspace/sanity_report.csv \
-    --limit 0 \
-    --workers 32
-[SUMMARY] total=65498 ok=65498 bad=0
-[REPORT]  /workspace/sanity_report.csv
-```
-
-Get the sanity_report.csv and give it to chatGPT (if there are any errors)
-```bash
-mac# scp -pC runpod-1:/workspace/sanity_report.csv .
-```
-
-# 8. L2-ARCTIC Dataset for Ground Truth
+# 7. L2-ARCTIC Dataset for Ground Truth
 
 Download L2-ARCTIC
 1. Fill the request form: https://psi.engr.tamu.edu/l2-arctic-corpus/ (Download section).
@@ -395,18 +374,123 @@ pod# python /workspace/ac_playground/check_features_20ms.py \
   --workers 32
 ```
 
+# 8. Sanity checks
+
+Perform sanity checks on all the artifacts we have created so far
+[Note] use '/dataset/arctic_data' for L2-ARCTIC artifacts.
+```bash
+pod# python /workspace/ac_playground/check_features_20ms.py \
+    --wav-dir /dataset/augmented_data/wavs_16k \
+    --phones-dir /dataset/augmented_data/mfa_alignments \
+    --f0-dir /dataset/augmented_data/f0_features \
+    --spk-embeds-dir /dataset/augmented_data/speaker_embeddings \
+    --report /workspace/sanity_report.csv \
+    --limit 0 \
+    --workers 32
+local$ scp -pC runpod-1:/workspace/sanity_report.csv .
+```
+
+Inspect the relation between phonemes and f0
+```bash
+python << 'EOF'
+import numpy as np
+from pathlib import Path
+import json
+
+# Pick one problematic sample
+utt = 'arctic_b0434_RRBI'  # phones=251 f0=249 diff=-2
+
+# Load data
+phones = np.load(f'/dataset/arctic_data/mfa_phones_20ms/{utt}.npy')
+f0 = np.load(f'/dataset/arctic_data/f0_features/{utt}.npy')
+
+# Load phoneme map
+pmap_file = Path('/dataset/arctic_data/mfa_phones_20ms/phoneme_map.json')
+with open(pmap_file) as f:
+    pmap = json.load(f)
+id2phone = {v: k for k, v in pmap.items()}
+
+print(f'Utterance: {utt}')
+print(f'Phones: {len(phones)} frames, F0: {len(f0)} frames')
+print(f'Difference: {len(f0) - len(phones)} (phones has 2 extra frames at the end)\n')
+
+# Show ALL frames side by side
+print('Frame | Phoneme    | F0 (Hz)')
+print('------|------------|--------')
+max_len = max(len(phones), len(f0))
+for i in range(max_len):
+    ph_str = id2phone.get(int(phones[i]), f'ID{phones[i]}') if i < len(phones) else '---'
+    f0_str = f'{f0[i]:.1f}' if i < len(f0) else '---'
+    marker = '  ← EXTRA' if i >= len(f0) else ''
+    print(f'{i:5d} | {ph_str:10s} | {f0_str:>6s}{marker}')
+
+print(f'\n--- What fix_phones_lengths.py will do ---')
+print(f'Truncate phones from {len(phones)} to {len(f0)} (remove last {len(phones)-len(f0)} frames)')
+print(f'Removed frames: {[id2phone.get(int(p), f"ID{p}") for p in phones[len(f0):]]}')
+EOF
+```
+
+Check the result of fix_phones_lengths.py
+```bash
+python << 'EOF'
+import numpy as np
+from pathlib import Path
+import json
+
+utt = 'arctic_b0434_RRBI'
+
+# Load both versions
+phones_raw = np.load(f'/dataset/arctic_data/mfa_phones_20ms/{utt}.npy')
+phones_fixed = np.load(f'/dataset/arctic_data/mfa_alignments/{utt}.npy')
+
+# Load phoneme map
+pmap_file = Path('/dataset/arctic_data/mfa_phones_20ms/phoneme_map.json')
+with open(pmap_file) as f:
+    pmap = json.load(f)
+id2phone = {v: k for k, v in pmap.items()}
+
+print(f'Utterance: {utt}')
+print(f'Raw (mfa_phones_20ms): {len(phones_raw)} frames')
+print(f'Fixed (mfa_alignments): {len(phones_fixed)} frames\n')
+
+# Show all frames side by side
+print('Frame | Raw Phoneme | Fixed Phoneme | Match')
+print('------|-------------|---------------|------')
+max_len = max(len(phones_raw), len(phones_fixed))
+for i in range(max_len):
+    raw_str = id2phone.get(int(phones_raw[i]), f'ID{phones_raw[i]}') if i < len(phones_raw) else '---'
+    fixed_str = id2phone.get(int(phones_fixed[i]), f'ID{phones_fixed[i]}') if i < len(phones_fixed) else '---'
+
+    # Determine match status
+    if i < len(phones_raw) and i < len(phones_fixed):
+        match = '✓' if phones_raw[i] == phones_fixed[i] else '✗'
+    elif i >= len(phones_fixed):
+        match = 'REMOVED'
+    else:
+        match = 'ADDED'
+
+    print(f'{i:5d} | {raw_str:11s} | {fixed_str:13s} | {match}')
+EOF
+```
+
 # Estimated times and resource usage
 
-Time: 7h
-Network volume: 80GB (only 13GB are from augmented_data)
-Pod disk: 15GB
+Time: 8h
+Requires storage: 100GB (including intermediate artifacts)
 
+Final storage requirements
 ```bash
-pod# du -h augmented_data/
+pod# du -h /dataset/augmented_data/
   1.1M	augmented_data/speaker_embeddings
   67M	augmented_data/mfa_alignments
   108M	augmented_data/f0_features
   13G	augmented_data/wavs_16k
   13G	augmented_data/
-```
 
+pod# du -h /dataset/arctic_data/
+  31M	arctic_data/f0_features
+  1003K	arctic_data/speaker_embeddings
+  18M	arctic_data/mfa_alignments
+  3.0G	arctic_data/wavs_16k
+  3.0G	arctic_data/
+```
