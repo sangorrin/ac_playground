@@ -352,7 +352,7 @@ import numpy as np
 from pathlib import Path
 
 # Load both phoneme maps
-aug_map_file = Path('/workspace/augmented_data/mfa_alignments/phoneme_map.json')
+aug_map_file = Path('/dataset/augmented_data/mfa_alignments/phoneme_map.json')
 arctic_map_file = Path('/dataset/arctic_data/mfa_alignments/phoneme_map.json')
 
 with open(aug_map_file, 'r') as f:
