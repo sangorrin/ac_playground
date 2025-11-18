@@ -189,8 +189,7 @@ pod# conda tos accept --override-channels --channel https://repo.anaconda.com/pk
 pod# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 pod# conda create -n aligner -y python=3.11
 pod# conda activate aligner
-pod (aligner)# conda install -c conda-forge -y montreal-forced-aligner
-  [If Error] conda install -c conda-forge montreal-forced-aligner kalpy kaldi=*=cpu* openfst
+pod (aligner)# conda install -c conda-forge montreal-forced-aligner kalpy kaldi=*=cpu* --update-deps
 pod (aligner)# pip install textgrid tqdm soundfile numpy
 pod (aligner)# mfa version
 ```
@@ -343,6 +342,112 @@ pod (aligner)# python /workspace/ac_playground/fix_phones_lengths.py \
   --out-dir /dataset/arctic_data/mfa_alignments \
   --workers 24
 pod (aligner)# conda deactivate
+```
+
+Fix phonems-to-id mapping (training vs arctic phoneme json)
+```bash
+pod (aligner)# python -c "
+import json
+import numpy as np
+from pathlib import Path
+
+# Load both phoneme maps
+aug_map_file = Path('/workspace/augmented_data/mfa_alignments/phoneme_map.json')
+arctic_map_file = Path('/dataset/arctic_data/mfa_alignments/phoneme_map.json')
+
+with open(aug_map_file, 'r') as f:
+    aug_map = json.load(f)
+with open(arctic_map_file, 'r') as f:
+    arctic_map = json.load(f)
+
+# Create remapping dictionary: ARCTIC ID -> Training ID
+remap_dict = {}
+for phoneme in set(aug_map.keys()) & set(arctic_map.keys()):
+    arctic_id = arctic_map[phoneme]
+    training_id = aug_map[phoneme]
+    if arctic_id != training_id:
+        remap_dict[arctic_id] = training_id
+        print(f'Remap {phoneme}: ARCTIC ID {arctic_id} -> Training ID {training_id}')
+
+print(f'\\nTotal remappings needed: {len(remap_dict)}')
+
+# Apply remapping to all ARCTIC alignment files
+arctic_align_dir = Path('/dataset/arctic_data/mfa_alignments')
+remapped_count = 0
+
+for npy_file in arctic_align_dir.glob('*.npy'):
+    if npy_file.name == 'phoneme_map.json':
+        continue
+
+    # Load and remap
+    phonemes = np.load(npy_file)
+    original_phonemes = phonemes.copy()
+
+    for i in range(len(phonemes)):
+        old_id = phonemes[i]
+        if old_id in remap_dict:
+            phonemes[i] = remap_dict[old_id]
+
+    # Save if changed
+    if not np.array_equal(phonemes, original_phonemes):
+        np.save(npy_file, phonemes)
+        remapped_count += 1
+
+print(f'\\nRemapped {remapped_count} alignment files')
+
+# Update the phoneme map to match training
+with open(arctic_align_dir / 'phoneme_map.json', 'w') as f:
+    json.dump(aug_map, f, indent=2)
+
+print('Updated phoneme_map.json to match training data')
+print('\\n✓ ARCTIC phoneme IDs now match training data!')
+"
+```
+
+Make sure that the phoneme_map.json now uses the same ids.
+```bash
+python -c "
+import json
+from pathlib import Path
+
+# Check the new ARCTIC phoneme map
+arctic_map_file = Path('/dataset/arctic_data/mfa_alignments/phoneme_map.json')
+aug_map_file = Path('/workspace/augmented_data/mfa_alignments/phoneme_map.json')
+
+if arctic_map_file.exists() and aug_map_file.exists():
+    with open(arctic_map_file, 'r') as f:
+        arctic_map = json.load(f)
+    with open(aug_map_file, 'r') as f:
+        aug_map = json.load(f)
+
+    print('=== Phoneme Map Comparison ===')
+    print(f'ARCTIC: {len(arctic_map)} phonemes')
+    print(f'Augmented: {len(aug_map)} phonemes')
+
+    # Check if they're the same
+    if arctic_map == aug_map:
+        print('✓ Phoneme maps are identical!')
+    else:
+        common = set(arctic_map.keys()) & set(aug_map.keys())
+        arctic_only = set(arctic_map.keys()) - set(aug_map.keys())
+        aug_only = set(aug_map.keys()) - set(arctic_map.keys())
+        print(f'Common phonemes: {len(common)}')
+        print(f'ARCTIC only: {sorted(arctic_only)}')
+        print(f'Augmented only: {sorted(aug_only)}')
+
+        # Check ID mappings
+        id_mismatches = []
+        for ph in common:
+            if arctic_map[ph] != aug_map[ph]:
+                id_mismatches.append((ph, arctic_map[ph], aug_map[ph]))
+
+        if id_mismatches:
+            print('ID mismatches:')
+            for ph, a_id, t_id in id_mismatches:
+                print(f'  {ph}: ARCTIC={a_id}, Training={t_id}')
+        else:
+            print('✓ Common phonemes have same IDs')
+"
 ```
 
 Extract one embedding per ARCTIC speaker
